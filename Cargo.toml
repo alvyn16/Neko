@@ -1,0 +1,37 @@
+[package]
+name = "neko"
+version = "0.1.0"
+edition = "2024"
+description = "A quiet, native wallpaper home for Windows"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+gpui = { version = "0.2.2", default-features = false, features = ["windows-manifest"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+directories = "6"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif", "tiff"] }
+rfd = "0.15"
+raw-window-handle = "0.6"
+sha2 = "0.10"
+trash = "5"
+url = "2"
+unicode-segmentation = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+embed-resource = "3.0"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+codegen-units = 8
+strip = "debuginfo"
