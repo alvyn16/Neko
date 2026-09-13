@@ -89,15 +89,12 @@ fn load_index(cache_dir: &Path, refresh: bool) -> Result<MemoryIndex> {
             notice: None,
         })
     });
-    if !refresh {
-        if let Some(state) = &previous {
-            if now.saturating_sub(state.index.fetched_at) < CACHE_LIFETIME
-                || now < state.retry_after
-            {
-                memory.insert(cache_path, state.clone());
-                return Ok(state.clone());
-            }
-        }
+    if !refresh
+        && let Some(state) = &previous
+        && (now.saturating_sub(state.index.fetched_at) < CACHE_LIFETIME || now < state.retry_after)
+    {
+        memory.insert(cache_path, state.clone());
+        return Ok(state.clone());
     }
     let state = match fetch_index() {
         Ok(index) => {
@@ -227,10 +224,10 @@ fn filter_index(
             if !is_still_path(path) {
                 return false;
             }
-            if let Some(color) = &color {
-                if metadata.color.to_lowercase() != *color {
-                    return false;
-                }
+            if let Some(color) = &color
+                && metadata.color.to_lowercase() != *color
+            {
+                return false;
             }
             if query.is_empty() {
                 return true;

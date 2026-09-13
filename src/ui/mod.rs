@@ -399,11 +399,10 @@ impl Neko {
         if let Some(raw) = HasWindowHandle::window_handle(window)
             .ok()
             .map(|handle| handle.as_raw())
+            && matches!(raw, RawWindowHandle::Win32(_))
         {
-            if matches!(raw, RawWindowHandle::Win32(_)) {
-                let parent = DialogParent(raw);
-                dialog = dialog.set_parent(&parent);
-            }
+            let parent = DialogParent(raw);
+            dialog = dialog.set_parent(&parent);
         }
         if let Some(path) = current {
             dialog = dialog.set_directory(path);
@@ -1246,123 +1245,120 @@ impl Neko {
             );
         match dialog {
             Dialog::Preview => {
-                panel = panel
-                    .child(
-                        div()
-                            .mx_4()
-                            .rounded(px(10.))
-                            .overflow_hidden()
-                            .h(px(
-                                (width * 0.51).min(f32::from(window.viewport_size().height) - 270.)
-                            ))
-                            .bg(rgb(0x0e0e10))
-                            .flex()
-                            .justify_center()
-                            .items_center()
-                            .when_some(item.thumbnail_path.clone(), |s, p| {
-                                s.child(
-                                    img(Arc::<Path>::from(p))
-                                        .size_full()
-                                        .object_fit(ObjectFit::Contain),
-                                )
-                            })
-                            .when(item.thumbnail_path.is_none(), |s| {
-                                s.child(icon("image").size(px(50.)).text_color(rgb(MUTED)))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .px_4()
-                            .pt_3()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
-                            .child(
-                                format!(
-                                    "{}{}",
-                                    if item.width > 0 {
-                                        format!("{} × {}  ·  ", item.width, item.height)
-                                    } else {
-                                        String::new()
-                                    },
-                                    item.attribution.as_deref().unwrap_or(source_label)
-                                ) + &color_label,
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_2()
-                            .p_4()
-                            .child(
-                                button(
-                                    "apply",
-                                    if self.busy {
-                                        "Working…"
-                                    } else {
-                                        "Apply wallpaper"
-                                    },
-                                    "monitor",
-                                    true,
-                                )
-                                .on_click(cx.listener(
-                                    move |this, _, _, cx| this.apply_item(apply.clone(), cx),
-                                )),
-                            )
-                            .when(!local, |s| {
-                                s.child(
-                                    button("save", "Save to folder", "download", false).on_click(
-                                        cx.listener(move |this, _, window, cx| {
-                                            this.save_item(save.clone(), Some(window), cx)
-                                        }),
-                                    ),
-                                )
-                            })
-                            .when(local, |s| {
-                                s.child(button("rename", "Rename", "edit", false).on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        let name = this
-                                            .selected
-                                            .as_ref()
-                                            .and_then(|w| w.local_path.as_ref())
-                                            .and_then(|p| p.file_stem())
-                                            .map(|s| s.to_string_lossy().into_owned())
-                                            .unwrap_or_default();
-                                        this.rename_input
-                                            .update(cx, |i, cx| i.set_value(&name, cx));
-                                        this.dialog = Some(Dialog::Rename);
-                                        this.rename_input.focus_handle(cx).focus(window);
-                                        cx.notify();
-                                    }),
-                                ))
+                panel =
+                    panel
+                        .child(
+                            div()
+                                .mx_4()
+                                .rounded(px(10.))
+                                .overflow_hidden()
+                                .h(px((width * 0.51)
+                                    .min(f32::from(window.viewport_size().height) - 270.)))
+                                .bg(rgb(0x0e0e10))
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .when_some(item.thumbnail_path.clone(), |s, p| {
+                                    s.child(
+                                        img(Arc::<Path>::from(p))
+                                            .size_full()
+                                            .object_fit(ObjectFit::Contain),
+                                    )
+                                })
+                                .when(item.thumbnail_path.is_none(), |s| {
+                                    s.child(icon("image").size(px(50.)).text_color(rgb(MUTED)))
+                                }),
+                        )
+                        .child(
+                            div()
+                                .px_4()
+                                .pt_3()
+                                .text_size(px(11.))
+                                .text_color(rgb(MUTED))
                                 .child(
-                                    button("reveal", "Show in folder", "folder", false).on_click(
-                                        cx.listener(|this, _, _, cx| {
-                                            if let Some(path) = this
+                                    format!(
+                                        "{}{}",
+                                        if item.width > 0 {
+                                            format!("{} × {}  ·  ", item.width, item.height)
+                                        } else {
+                                            String::new()
+                                        },
+                                        item.attribution.as_deref().unwrap_or(source_label)
+                                    ) + &color_label,
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .p_4()
+                                .child(
+                                    button(
+                                        "apply",
+                                        if self.busy {
+                                            "Working…"
+                                        } else {
+                                            "Apply wallpaper"
+                                        },
+                                        "monitor",
+                                        true,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| this.apply_item(apply.clone(), cx),
+                                    )),
+                                )
+                                .when(!local, |s| {
+                                    s.child(
+                                        button("save", "Save to folder", "download", false)
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.save_item(save.clone(), Some(window), cx)
+                                            })),
+                                    )
+                                })
+                                .when(local, |s| {
+                                    s.child(button("rename", "Rename", "edit", false).on_click(
+                                        cx.listener(|this, _, window, cx| {
+                                            let name = this
                                                 .selected
                                                 .as_ref()
-                                                .and_then(|w| w.local_path.clone())
-                                            {
-                                                if let Err(e) = local::show_in_folder(&path) {
+                                                .and_then(|w| w.local_path.as_ref())
+                                                .and_then(|p| p.file_stem())
+                                                .map(|s| s.to_string_lossy().into_owned())
+                                                .unwrap_or_default();
+                                            this.rename_input
+                                                .update(cx, |i, cx| i.set_value(&name, cx));
+                                            this.dialog = Some(Dialog::Rename);
+                                            this.rename_input.focus_handle(cx).focus(window);
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(
+                                        button("reveal", "Show in folder", "folder", false)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Some(path) = this
+                                                    .selected
+                                                    .as_ref()
+                                                    .and_then(|w| w.local_path.clone())
+                                                    && let Err(e) = local::show_in_folder(&path)
+                                                {
                                                     this.fail(format!("Could not show file: {e}"));
                                                     cx.notify();
                                                 }
-                                            }
-                                        }),
-                                    ),
-                                )
-                                .child(div().flex_1())
-                                .child(
-                                    button("delete", "Delete", "trash", false)
-                                        .text_color(rgb(0xe29a9e))
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.dialog = Some(Dialog::Delete);
-                                            cx.notify();
-                                        })),
-                                )
-                            }),
-                    );
+                                            })),
+                                    )
+                                    .child(div().flex_1())
+                                    .child(
+                                        button("delete", "Delete", "trash", false)
+                                            .text_color(rgb(0xe29a9e))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.dialog = Some(Dialog::Delete);
+                                                cx.notify();
+                                            })),
+                                    )
+                                }),
+                        );
             }
             Dialog::Rename => {
                 panel = panel
