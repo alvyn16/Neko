@@ -30,4 +30,6 @@ if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE
 
 $installer = Join-Path $projectRoot "dist\Neko-Setup-x64.exe"
 if (-not (Test-Path -LiteralPath $installer)) { throw "Installer was not created" }
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText("$installer.sha256", "$hash  Neko-Setup-x64.exe`n")
 Write-Host "Created $installer"

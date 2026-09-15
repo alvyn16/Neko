@@ -1,6 +1,6 @@
 [package]
 name = "neko"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A quiet, native wallpaper home for Windows"
 license = "MIT"
@@ -20,9 +20,10 @@ sha2 = "0.10"
 trash = "5"
 url = "2"
 unicode-segmentation = "1"
+semver = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem", "Win32_System_Com"] }
 winreg = "0.55"
 
 [dev-dependencies]

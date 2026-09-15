@@ -4,6 +4,7 @@ mod local;
 mod model;
 mod sources;
 mod ui;
+mod update;
 mod wallpaper;
 
 fn main() {

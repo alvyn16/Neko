@@ -45,7 +45,7 @@ impl RotationInterval {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub wallpaper_folder: Option<PathBuf>,
@@ -53,6 +53,22 @@ pub struct Config {
     pub last_source: Provider,
     pub wallpaper_fit: WallpaperFit,
     pub rotation_interval: RotationInterval,
+    pub monitor_index: Option<u32>,
+    pub check_for_updates: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            wallpaper_folder: None,
+            last_tab: Tab::default(),
+            last_source: Provider::default(),
+            wallpaper_fit: WallpaperFit::default(),
+            rotation_interval: RotationInterval::default(),
+            monitor_index: None,
+            check_for_updates: true,
+        }
+    }
 }
 
 fn project_dirs() -> Result<ProjectDirs> {
@@ -144,6 +160,8 @@ mod tests {
             last_source: Provider::Bjarneo,
             wallpaper_fit: WallpaperFit::Fit,
             rotation_interval: RotationInterval::Hourly,
+            monitor_index: Some(1),
+            check_for_updates: false,
         };
         config.save_to(&path).unwrap();
         let loaded = Config::load_from(&path).unwrap();
@@ -152,6 +170,8 @@ mod tests {
         assert_eq!(loaded.last_source, Provider::Bjarneo);
         assert_eq!(loaded.wallpaper_fit, WallpaperFit::Fit);
         assert_eq!(loaded.rotation_interval, RotationInterval::Hourly);
+        assert_eq!(loaded.monitor_index, Some(1));
+        assert!(!loaded.check_for_updates);
         config.last_tab = Tab::Local;
         config.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path).unwrap().last_tab, Tab::Local);
@@ -164,6 +184,8 @@ mod tests {
         assert_eq!(old.last_source, Provider::Wallhaven);
         assert_eq!(old.wallpaper_fit, WallpaperFit::Fill);
         assert_eq!(old.rotation_interval, RotationInterval::Off);
+        assert_eq!(old.monitor_index, None);
+        assert!(old.check_for_updates);
         assert!(old.wallpaper_folder.is_none());
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.toml");

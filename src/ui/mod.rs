@@ -5,7 +5,7 @@ use crate::{
     config::{self, Config, RotationInterval, WallpaperFit},
     local,
     model::{Provider, Tab, Wallpaper},
-    sources, wallpaper,
+    sources, update, wallpaper,
 };
 use gpui::{WindowControlArea, prelude::*, *};
 use icons::icon;
@@ -75,6 +75,9 @@ struct Neko {
     color: Option<String>,
     inflight: HashSet<String>,
     failed_thumbs: HashSet<String>,
+    monitors: Vec<wallpaper::MonitorInfo>,
+    available_update: Option<update::UpdateInfo>,
+    update_checking: bool,
     scroll: UniformListScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -146,7 +149,7 @@ fn text_button(
 
 impl Neko {
     fn new(cx: &mut Context<Self>) -> Self {
-        let (config, initial_error) = match Config::load() {
+        let (mut config, initial_error) = match Config::load() {
             Ok(c) => (c, None),
             Err(e) => (
                 Config::default(),
@@ -162,6 +165,13 @@ impl Neko {
         };
         let query = cx.new(|cx| TextInput::new("Search wallpapers…", cx));
         let rename_input = cx.new(|cx| TextInput::new("Wallpaper name", cx));
+        let monitors = wallpaper::monitors().unwrap_or_default();
+        if config
+            .monitor_index
+            .is_some_and(|selected| !monitors.iter().any(|monitor| monitor.index == selected))
+        {
+            config.monitor_index = None;
+        }
         let subscriptions = vec![
             cx.subscribe(&query, |this, _, event, cx| match event {
                 InputEvent::Changed if this.config.last_tab == Tab::Local => {
@@ -206,11 +216,17 @@ impl Neko {
             color: None,
             inflight: HashSet::new(),
             failed_thumbs: HashSet::new(),
+            monitors,
+            available_update: None,
+            update_checking: false,
             scroll: UniformListScrollHandle::new(),
             _subscriptions: subscriptions,
         };
         this.refresh(false, cx);
         this.schedule_rotation(cx);
+        if this.config.check_for_updates {
+            this.check_updates(false, cx);
+        }
         this
     }
 
@@ -249,6 +265,128 @@ impl Neko {
         }
         cx.notify();
     }
+    fn set_monitor(&mut self, index: Option<u32>, cx: &mut Context<Self>) {
+        if self.config.monitor_index == index {
+            return;
+        }
+        self.config.monitor_index = index;
+        self.error = false;
+        self.persist();
+        if !self.error {
+            self.status = "Display target updated".into();
+        }
+        cx.notify();
+    }
+    fn set_update_checks(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.config.check_for_updates = enabled;
+        self.error = false;
+        self.persist();
+        if enabled && !self.error {
+            self.check_updates(false, cx);
+        } else {
+            cx.notify();
+        }
+    }
+    fn check_updates(&mut self, announce: bool, cx: &mut Context<Self>) {
+        if self.update_checking {
+            return;
+        }
+        self.update_checking = true;
+        job(cx, update::check, move |this, result, cx| {
+            this.update_checking = false;
+            match result {
+                Ok(Some(info)) => {
+                    this.status = format!("Neko {} is available", info.version);
+                    this.available_update = Some(info);
+                    this.error = false;
+                }
+                Ok(None) => {
+                    this.available_update = None;
+                    if announce {
+                        this.status = "Neko is up to date".into();
+                        this.error = false;
+                    }
+                }
+                Err(e) => {
+                    if announce {
+                        this.fail(format!("Could not check for updates: {e:#}"));
+                    }
+                }
+            }
+            cx.notify();
+        });
+        cx.notify();
+    }
+    fn install_update(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let Some(info) = self.available_update.clone() else {
+            self.check_updates(true, cx);
+            return;
+        };
+        if info.installer_url.is_none() || info.checksum_url.is_none() {
+            cx.open_url(&info.release_url);
+            return;
+        }
+        self.busy = true;
+        self.status = format!("Downloading Neko {}…", info.version);
+        self.error = false;
+        let cache = self.cache.clone();
+        job(
+            cx,
+            move || update::download_installer(&info, &cache),
+            move |this, result, cx| {
+                this.busy = false;
+                match result.and_then(|path| update::launch_installer(&path)) {
+                    Ok(()) => cx.quit(),
+                    Err(e) => this.fail(format!("Could not install update: {e:#}")),
+                }
+                cx.notify();
+            },
+        );
+        cx.notify();
+    }
+    fn import_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if self.busy || paths.is_empty() {
+            return;
+        }
+        let Some(folder) = self.config.wallpaper_folder.clone() else {
+            self.fail("Choose a wallpaper folder before dropping images into Neko".into());
+            cx.notify();
+            return;
+        };
+        self.busy = true;
+        self.status = "Importing dropped images…".into();
+        self.error = false;
+        job(
+            cx,
+            move || local::import_files(&paths, &folder),
+            move |this, result, cx| {
+                this.busy = false;
+                match result {
+                    Ok(summary) => {
+                        let status = if summary.skipped == 0 {
+                            format!("Imported {} wallpaper(s)", summary.imported)
+                        } else {
+                            format!(
+                                "Imported {} wallpaper(s) · skipped {}",
+                                summary.imported, summary.skipped
+                            )
+                        };
+                        this.error = false;
+                        if this.config.last_tab == Tab::Local {
+                            this.refresh(false, cx);
+                        }
+                        this.status = status;
+                    }
+                    Err(e) => this.fail(format!("Could not import images: {e:#}")),
+                }
+                cx.notify();
+            },
+        );
+        cx.notify();
+    }
     fn schedule_rotation(&mut self, cx: &mut Context<Self>) {
         self.rotation_generation = self.rotation_generation.wrapping_add(1);
         let generation = self.rotation_generation;
@@ -281,6 +419,7 @@ impl Neko {
         self.error = false;
         let cache = self.cache.clone();
         let fit = self.config.wallpaper_fit;
+        let monitor_index = self.config.monitor_index;
         let generation = self.rotation_generation;
         job(
             cx,
@@ -300,7 +439,7 @@ impl Neko {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned();
-                wallpaper::apply(path, &cache, fit)?;
+                wallpaper::apply(path, &cache, fit, monitor_index)?;
                 Ok(title)
             },
             move |this, result, cx| {
@@ -541,6 +680,7 @@ impl Neko {
         self.error = false;
         let cache = self.cache.clone();
         let fit = self.config.wallpaper_fit;
+        let monitor_index = self.config.monitor_index;
         let title = item.title.clone();
         job(
             cx,
@@ -549,7 +689,7 @@ impl Neko {
                     Some(p) => p,
                     None => sources::download(&item, &cache)?,
                 };
-                wallpaper::apply(&path, &cache, fit)
+                wallpaper::apply(&path, &cache, fit, monitor_index)
             },
             move |this, result, cx| {
                 this.busy = false;
@@ -1313,13 +1453,16 @@ impl Neko {
             (RotationInterval::Daily, "Daily"),
         ];
         let panel = div()
+            .id("settings-panel")
             .w(px(590.))
+            .max_h(px(530.))
+            .overflow_y_scroll()
+            .overflow_x_hidden()
             .rounded(px(16.))
             .bg(rgb(0x1b1b1f))
             .border_1()
             .border_color(rgb(0x3a3a43))
             .shadow_2xl()
-            .overflow_hidden()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 div()
@@ -1407,6 +1550,73 @@ impl Neko {
                         div()
                             .text_size(px(13.))
                             .font_weight(FontWeight::MEDIUM)
+                            .child("Display"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child("Choose where Neko applies wallpapers."),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_2()
+                            .child({
+                                let active = self.config.monitor_index.is_none();
+                                div()
+                                    .id(("monitor-target", 0usize))
+                                    .h(px(34.))
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(8.))
+                                    .cursor_pointer()
+                                    .text_size(px(11.))
+                                    .bg(rgb(if active { 0x403653 } else { SURFACE }))
+                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
+                                    .child("All displays")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.set_monitor(None, cx)
+                                    }))
+                            })
+                            .children(self.monitors.iter().enumerate().map(|(position, monitor)| {
+                                let index = monitor.index;
+                                let active = self.config.monitor_index == Some(index);
+                                div()
+                                    .id(("monitor-target", position + 1))
+                                    .h(px(34.))
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(8.))
+                                    .cursor_pointer()
+                                    .text_size(px(11.))
+                                    .bg(rgb(if active { 0x403653 } else { SURFACE }))
+                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
+                                    .child(monitor.label.clone())
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_monitor(Some(index), cx)
+                                    }))
+                            })),
+                    ),
+            )
+            .child(div().h(px(1.)).mx_4().bg(rgb(0x303036)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .p_4()
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
                             .child("Automatic rotation"),
                     )
                     .child(
@@ -1460,6 +1670,80 @@ impl Neko {
                                     } else {
                                         "Choose a wallpaper folder before rotating"
                                     }),
+                            ),
+                    ),
+            )
+            .child(div().h(px(1.)).mx_4().bg(rgb(0x303036)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .p_4()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(13.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("Updates"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(MUTED))
+                                    .child(format!("Version {}", env!("CARGO_PKG_VERSION"))),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child(match &self.available_update {
+                                Some(info) => format!("Neko {} is ready to install.", info.version),
+                                None if self.update_checking => "Checking GitHub Releases…".into(),
+                                None => "Get notified when a new Neko release is available.".into(),
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                text_button(
+                                    "update-action",
+                                    if self.available_update.is_some() {
+                                        "Install update"
+                                    } else if self.update_checking {
+                                        "Checking…"
+                                    } else {
+                                        "Check now"
+                                    },
+                                    self.available_update.is_some(),
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if !this.update_checking {
+                                        this.install_update(cx);
+                                    }
+                                })),
+                            )
+                            .child(
+                                text_button(
+                                    "automatic-update-checks",
+                                    if self.config.check_for_updates {
+                                        "Automatic checks on"
+                                    } else {
+                                        "Automatic checks off"
+                                    },
+                                    false,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.set_update_checks(!this.config.check_for_updates, cx)
+                                })),
                             ),
                     )
                     .when(!self.status.is_empty(), |s| {
@@ -1765,6 +2049,12 @@ impl Render for Neko {
             .bg(rgba(0x141416f5))
             .border_1()
             .border_color(rgb(0x34343a))
+            .drag_over::<ExternalPaths>(|s, _, _, _| {
+                s.border_color(rgb(ACCENT)).bg(rgba(0x1b1824f5))
+            })
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                this.import_paths(paths.paths().to_vec(), cx)
+            }))
             .text_color(rgb(TEXT))
             .font_family("Segoe UI")
             .text_size(px(13.))

@@ -398,6 +398,43 @@ pub fn save_download(download: &Path, folder: &Path, name: &str) -> Result<PathB
     bail!("Too many images already have that name; please rename some of them")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportSummary {
+    pub imported: usize,
+    pub skipped: usize,
+}
+
+pub fn import_files(paths: &[PathBuf], folder: &Path) -> Result<ImportSummary> {
+    ensure!(
+        folder.is_dir(),
+        "Choose an existing wallpaper folder before importing"
+    );
+    let mut summary = ImportSummary {
+        imported: 0,
+        skipped: 0,
+    };
+    for path in paths {
+        if !path.is_file() || !supported_extension(path) {
+            summary.skipped += 1;
+            continue;
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        match save_download(path, folder, &name) {
+            Ok(_) => summary.imported += 1,
+            Err(_) => summary.skipped += 1,
+        }
+    }
+    ensure!(
+        summary.imported > 0,
+        "Drop JPG, PNG, WebP, BMP, GIF, or TIFF image files"
+    );
+    Ok(summary)
+}
+
 pub fn show_in_folder(path: &Path) -> Result<()> {
     ensure!(path.is_file(), "This image no longer exists");
     #[cfg(windows)]
@@ -496,6 +533,23 @@ mod tests {
         fs::write(&download, "HTML error page").unwrap();
         assert!(save_download(&download, directory.path(), "broken").is_err());
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn importing_files_copies_supported_images_and_skips_other_files() {
+        let source = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let image = source.path().join("wallpaper.png");
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]))
+            .save(&image)
+            .unwrap();
+        let text = source.path().join("notes.txt");
+        fs::write(&text, "not an image").unwrap();
+
+        let summary = import_files(&[image, text], destination.path()).unwrap();
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.skipped, 1);
+        assert!(destination.path().join("wallpaper.png").is_file());
     }
 
     #[test]

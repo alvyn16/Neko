@@ -11,6 +11,9 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - name: Select stable Rust
@@ -22,19 +25,48 @@ jobs:
       - name: Test
         shell: pwsh
         run: cargo test --locked -- --test-threads=4
+      - name: Build application
+        shell: pwsh
+        run: cargo build --release --locked
+      - name: Sign application
+        if: env.WINDOWS_CERTIFICATE_BASE64 != ''
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "neko-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          ./scripts/sign-release.ps1 -File "target/release/neko.exe" -CertificatePath $certificate -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
       - name: Build portable ZIP
         shell: pwsh
-        run: ./scripts/build-release.ps1
+        run: ./scripts/build-release.ps1 -SkipBuild
       - name: Build installer
         shell: pwsh
         run: ./scripts/build-installer.ps1 -SkipBuild
+      - name: Sign installer
+        if: env.WINDOWS_CERTIFICATE_BASE64 != ''
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "neko-signing.pfx"
+          ./scripts/sign-release.ps1 -File "dist/Neko-Setup-x64.exe" -CertificatePath $certificate -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          foreach ($file in @("dist/Neko-windows-x64.zip", "dist/Neko-Setup-x64.exe")) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+            $name = Split-Path $file -Leaf
+            [IO.File]::WriteAllText("$file.sha256", "$hash  $name`n")
+          }
       - name: Publish release assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $assets = @("dist/Neko-windows-x64.zip", "dist/Neko-Setup-x64.exe")
+          $assets = @(
+            "dist/Neko-windows-x64.zip",
+            "dist/Neko-windows-x64.zip.sha256",
+            "dist/Neko-Setup-x64.exe",
+            "dist/Neko-Setup-x64.exe.sha256"
+          )
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @assets --clobber

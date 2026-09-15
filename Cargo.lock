@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "neko"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -2885,6 +2885,7 @@ dependencies = [
  "raw-window-handle",
  "reqwest",
  "rfd",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.10.9",
