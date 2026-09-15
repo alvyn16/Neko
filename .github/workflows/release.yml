@@ -1,0 +1,43 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Rust
+        shell: pwsh
+        run: rustup default stable
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Test
+        shell: pwsh
+        run: cargo test --locked -- --test-threads=4
+      - name: Build portable ZIP
+        shell: pwsh
+        run: ./scripts/build-release.ps1
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -SkipBuild
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $assets = @("dist/Neko-windows-x64.zip", "dist/Neko-Setup-x64.exe")
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --verify-tag --generate-notes --title "Neko $tag"
+          }

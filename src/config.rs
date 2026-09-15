@@ -7,7 +7,43 @@ use std::{
     io::Write,
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WallpaperFit {
+    #[default]
+    Fill,
+    Fit,
+    Stretch,
+    Center,
+    Tile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum RotationInterval {
+    #[default]
+    Off,
+    FifteenMinutes,
+    Hourly,
+    SixHours,
+    Daily,
+}
+
+impl RotationInterval {
+    pub fn duration(self) -> Option<Duration> {
+        let seconds = match self {
+            Self::Off => return None,
+            Self::FifteenMinutes => 15 * 60,
+            Self::Hourly => 60 * 60,
+            Self::SixHours => 6 * 60 * 60,
+            Self::Daily => 24 * 60 * 60,
+        };
+        Some(Duration::from_secs(seconds))
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -15,6 +51,8 @@ pub struct Config {
     pub wallpaper_folder: Option<PathBuf>,
     pub last_tab: Tab,
     pub last_source: Provider,
+    pub wallpaper_fit: WallpaperFit,
+    pub rotation_interval: RotationInterval,
 }
 
 fn project_dirs() -> Result<ProjectDirs> {
@@ -104,12 +142,16 @@ mod tests {
             wallpaper_folder: Some(PathBuf::from(r"C:\Pictures\猫 wallpapers")),
             last_tab: Tab::Search,
             last_source: Provider::Bjarneo,
+            wallpaper_fit: WallpaperFit::Fit,
+            rotation_interval: RotationInterval::Hourly,
         };
         config.save_to(&path).unwrap();
         let loaded = Config::load_from(&path).unwrap();
         assert_eq!(loaded.wallpaper_folder, config.wallpaper_folder);
         assert_eq!(loaded.last_tab, Tab::Search);
         assert_eq!(loaded.last_source, Provider::Bjarneo);
+        assert_eq!(loaded.wallpaper_fit, WallpaperFit::Fit);
+        assert_eq!(loaded.rotation_interval, RotationInterval::Hourly);
         config.last_tab = Tab::Local;
         config.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path).unwrap().last_tab, Tab::Local);
@@ -120,10 +162,25 @@ mod tests {
     fn older_settings_get_defaults_and_invalid_settings_report_error() {
         let old: Config = toml::from_str("last_tab = 'search'").unwrap();
         assert_eq!(old.last_source, Provider::Wallhaven);
+        assert_eq!(old.wallpaper_fit, WallpaperFit::Fill);
+        assert_eq!(old.rotation_interval, RotationInterval::Off);
         assert!(old.wallpaper_folder.is_none());
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.toml");
         fs::write(&path, "last_tab = [broken").unwrap();
         assert!(Config::load_from(&path).is_err());
+    }
+
+    #[test]
+    fn rotation_intervals_have_expected_durations() {
+        assert_eq!(RotationInterval::Off.duration(), None);
+        assert_eq!(
+            RotationInterval::FifteenMinutes.duration(),
+            Some(Duration::from_secs(15 * 60))
+        );
+        assert_eq!(
+            RotationInterval::Daily.duration(),
+            Some(Duration::from_secs(24 * 60 * 60))
+        );
     }
 }

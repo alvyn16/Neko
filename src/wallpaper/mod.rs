@@ -1,8 +1,35 @@
+use crate::config::WallpaperFit;
 use anyhow::{Context, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+
+fn style_values(fit: WallpaperFit) -> (&'static str, &'static str) {
+    match fit {
+        WallpaperFit::Fill => ("10", "0"),
+        WallpaperFit::Fit => ("6", "0"),
+        WallpaperFit::Stretch => ("2", "0"),
+        WallpaperFit::Center => ("0", "0"),
+        WallpaperFit::Tile => ("0", "1"),
+    }
+}
+
+#[cfg(windows)]
+fn set_fit(fit: WallpaperFit) -> Result<()> {
+    use winreg::{RegKey, enums::HKEY_CURRENT_USER};
+    let desktop = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags("Control Panel\\Desktop", winreg::enums::KEY_SET_VALUE)
+        .context("Could not open Windows wallpaper settings")?;
+    let (style, tile) = style_values(fit);
+    desktop
+        .set_value("WallpaperStyle", &style)
+        .context("Could not set the Windows wallpaper fit mode")?;
+    desktop
+        .set_value("TileWallpaper", &tile)
+        .context("Could not set the Windows wallpaper tile mode")?;
+    Ok(())
+}
 
 /// Keep the applied image in persistent cache so moving/deleting the source cannot
 /// break the Windows desktop after a restart. BMP also handles WebP/GIF/TIFF input.
@@ -20,12 +47,13 @@ fn prepare(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(windows)]
-pub fn apply(path: &Path, cache_dir: &Path) -> Result<()> {
+pub fn apply(path: &Path, cache_dir: &Path, fit: WallpaperFit) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::UI::WindowsAndMessaging::{
         SPI_SETDESKWALLPAPER, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SystemParametersInfoW,
     };
     let prepared = prepare(path, cache_dir)?;
+    set_fit(fit)?;
     let mut wide: Vec<u16> = prepared.as_os_str().encode_wide().chain(Some(0)).collect();
     // The owned, nul-terminated path stays alive until the synchronous API returns.
     unsafe {
@@ -40,7 +68,7 @@ pub fn apply(path: &Path, cache_dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-pub fn apply(_path: &Path, _cache_dir: &Path) -> Result<()> {
+pub fn apply(_path: &Path, _cache_dir: &Path, _fit: WallpaperFit) -> Result<()> {
     anyhow::bail!("Applying wallpapers is available on Windows")
 }
 
@@ -63,5 +91,14 @@ mod tests {
         assert_eq!(prepared, prepare(&image, cache.path()).unwrap());
         fs::remove_file(image).unwrap();
         assert!(prepared.is_file());
+    }
+
+    #[test]
+    fn fit_modes_map_to_windows_desktop_values() {
+        assert_eq!(style_values(WallpaperFit::Fill), ("10", "0"));
+        assert_eq!(style_values(WallpaperFit::Fit), ("6", "0"));
+        assert_eq!(style_values(WallpaperFit::Stretch), ("2", "0"));
+        assert_eq!(style_values(WallpaperFit::Center), ("0", "0"));
+        assert_eq!(style_values(WallpaperFit::Tile), ("0", "1"));
     }
 }

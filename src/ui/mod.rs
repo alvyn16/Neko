@@ -2,7 +2,7 @@ mod icons;
 pub mod input;
 
 use crate::{
-    config::{self, Config},
+    config::{self, Config, RotationInterval, WallpaperFit},
     local,
     model::{Provider, Tab, Wallpaper},
     sources, wallpaper,
@@ -17,6 +17,7 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const BG: u32 = 0x141416;
@@ -48,6 +49,7 @@ enum Dialog {
     Preview,
     Rename,
     Delete,
+    Settings,
 }
 
 struct Neko {
@@ -65,6 +67,7 @@ struct Neko {
     status: String,
     error: bool,
     generation: u64,
+    rotation_generation: u64,
     active_query: String,
     page: u32,
     last_page: u32,
@@ -195,6 +198,7 @@ impl Neko {
             status: initial_error.or(cache_error).unwrap_or_default(),
             error: false,
             generation: 0,
+            rotation_generation: 0,
             active_query: String::new(),
             page: 0,
             last_page: 0,
@@ -206,6 +210,7 @@ impl Neko {
             _subscriptions: subscriptions,
         };
         this.refresh(false, cx);
+        this.schedule_rotation(cx);
         this
     }
 
@@ -214,6 +219,106 @@ impl Neko {
             self.status = format!("Could not remember settings: {e}");
             self.error = true;
         }
+    }
+    fn set_fit(&mut self, fit: WallpaperFit, cx: &mut Context<Self>) {
+        if self.config.wallpaper_fit == fit {
+            return;
+        }
+        self.config.wallpaper_fit = fit;
+        self.error = false;
+        self.persist();
+        if !self.error {
+            self.status = "Wallpaper fit updated".into();
+        }
+        cx.notify();
+    }
+    fn set_rotation(&mut self, interval: RotationInterval, cx: &mut Context<Self>) {
+        if self.config.rotation_interval == interval {
+            return;
+        }
+        self.config.rotation_interval = interval;
+        self.error = false;
+        self.persist();
+        self.schedule_rotation(cx);
+        if !self.error {
+            self.status = if interval == RotationInterval::Off {
+                "Automatic rotation is off".into()
+            } else {
+                "Automatic rotation is ready".into()
+            };
+        }
+        cx.notify();
+    }
+    fn schedule_rotation(&mut self, cx: &mut Context<Self>) {
+        self.rotation_generation = self.rotation_generation.wrapping_add(1);
+        let generation = self.rotation_generation;
+        let Some(duration) = self.config.rotation_interval.duration() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            Timer::after(duration).await;
+            let _ = this.update(cx, move |this, cx| {
+                if this.rotation_generation == generation {
+                    this.rotate_wallpaper(cx);
+                }
+            });
+        })
+        .detach();
+    }
+    fn rotate_wallpaper(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            self.schedule_rotation(cx);
+            return;
+        }
+        let Some(folder) = self.config.wallpaper_folder.clone() else {
+            self.fail("Automatic rotation needs a wallpaper folder".into());
+            self.schedule_rotation(cx);
+            cx.notify();
+            return;
+        };
+        self.busy = true;
+        self.status = "Choosing the next wallpaper…".into();
+        self.error = false;
+        let cache = self.cache.clone();
+        let fit = self.config.wallpaper_fit;
+        let generation = self.rotation_generation;
+        job(
+            cx,
+            move || -> anyhow::Result<String> {
+                let paths = local::image_paths(&folder)?;
+                anyhow::ensure!(
+                    !paths.is_empty(),
+                    "The wallpaper folder has no supported images"
+                );
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let path = &paths[(seed % paths.len() as u128) as usize];
+                let title = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                wallpaper::apply(path, &cache, fit)?;
+                Ok(title)
+            },
+            move |this, result, cx| {
+                this.busy = false;
+                match result {
+                    Ok(title) => {
+                        this.status = format!("Rotated · {title}");
+                        this.error = false;
+                    }
+                    Err(e) => this.fail(format!("Could not rotate wallpaper: {e:#}")),
+                }
+                if this.rotation_generation == generation {
+                    this.schedule_rotation(cx);
+                }
+                cx.notify();
+            },
+        );
+        cx.notify();
     }
     fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         if self.config.last_tab == tab {
@@ -435,6 +540,7 @@ impl Neko {
         self.status = "Preparing wallpaper…".into();
         self.error = false;
         let cache = self.cache.clone();
+        let fit = self.config.wallpaper_fit;
         let title = item.title.clone();
         job(
             cx,
@@ -443,7 +549,7 @@ impl Neko {
                     Some(p) => p,
                     None => sources::download(&item, &cache)?,
                 };
-                wallpaper::apply(&path, &cache)
+                wallpaper::apply(&path, &cache, fit)
             },
             move |this, result, cx| {
                 this.busy = false;
@@ -580,6 +686,24 @@ impl Neko {
                             .text_size(px(17.))
                             .child("neko"),
                     ),
+            )
+            .child(
+                div()
+                    .id("settings")
+                    .size(px(28.))
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_color(rgb(MUTED))
+                    .hover(|s| s.bg(rgb(SURFACE)).text_color(rgb(TEXT)))
+                    .child(icon("settings").size(px(14.)))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.dialog = Some(Dialog::Settings);
+                        this.selected = None;
+                        cx.notify();
+                    })),
             )
             .child(
                 div()
@@ -1173,11 +1297,208 @@ impl Neko {
             })
     }
 
+    fn settings_modal(&self, cx: &mut Context<Self>) -> AnyElement {
+        let fit_options = [
+            (WallpaperFit::Fill, "Fill"),
+            (WallpaperFit::Fit, "Fit"),
+            (WallpaperFit::Stretch, "Stretch"),
+            (WallpaperFit::Center, "Center"),
+            (WallpaperFit::Tile, "Tile"),
+        ];
+        let rotation_options = [
+            (RotationInterval::Off, "Off"),
+            (RotationInterval::FifteenMinutes, "15 min"),
+            (RotationInterval::Hourly, "1 hour"),
+            (RotationInterval::SixHours, "6 hours"),
+            (RotationInterval::Daily, "Daily"),
+        ];
+        let panel = div()
+            .w(px(590.))
+            .rounded(px(16.))
+            .bg(rgb(0x1b1b1f))
+            .border_1()
+            .border_color(rgb(0x3a3a43))
+            .shadow_2xl()
+            .overflow_hidden()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .p_4()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(15.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Settings"),
+                    )
+                    .child(
+                        div()
+                            .id("close-settings")
+                            .size(px(30.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(8.))
+                            .cursor_pointer()
+                            .bg(rgb(SURFACE))
+                            .hover(|s| s.bg(rgb(0x594048)))
+                            .child("×")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.dialog = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .px_4()
+                    .pb_4()
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Wallpaper fit"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child("Controls how Windows places each wallpaper on the desktop."),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .children(fit_options.into_iter().enumerate().map(|(index, (fit, label))| {
+                                let active = self.config.wallpaper_fit == fit;
+                                div()
+                                    .id(("wallpaper-fit", index))
+                                    .flex_1()
+                                    .h(px(34.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(8.))
+                                    .cursor_pointer()
+                                    .text_size(px(11.))
+                                    .bg(rgb(if active { 0x403653 } else { SURFACE }))
+                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
+                                    .child(label)
+                                    .on_click(
+                                        cx.listener(move |this, _, _, cx| this.set_fit(fit, cx)),
+                                    )
+                            })),
+                    ),
+            )
+            .child(div().h(px(1.)).mx_4().bg(rgb(0x303036)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .p_4()
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Automatic rotation"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child("Picks a random image from your local wallpaper folder while Neko is running."),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .children(rotation_options.into_iter().enumerate().map(|(index, (interval, label))| {
+                                let active = self.config.rotation_interval == interval;
+                                div()
+                                    .id(("rotation-interval", index))
+                                    .flex_1()
+                                    .h(px(34.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(8.))
+                                    .cursor_pointer()
+                                    .text_size(px(11.))
+                                    .bg(rgb(if active { 0x403653 } else { SURFACE }))
+                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
+                                    .child(label)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_rotation(interval, cx)
+                                    }))
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                button("rotate-now", "Rotate now", "refresh", true).on_click(
+                                    cx.listener(|this, _, _, cx| this.rotate_wallpaper(cx)),
+                                ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(MUTED))
+                                    .child(if self.config.wallpaper_folder.is_some() {
+                                        "Uses your selected wallpaper folder"
+                                    } else {
+                                        "Choose a wallpaper folder before rotating"
+                                    }),
+                            ),
+                    )
+                    .when(!self.status.is_empty(), |s| {
+                        s.child(
+                            div()
+                                .text_size(px(10.))
+                                .text_color(rgb(if self.error { 0xe8a2a2 } else { MUTED }))
+                                .child(self.status.clone()),
+                        )
+                    }),
+            );
+        div()
+            .absolute()
+            .inset_0()
+            .bg(rgba(0x050507c8))
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.dialog = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .occlude()
+            .child(panel)
+            .into_any_element()
+    }
+
     fn modal(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let Some(item) = self.selected.clone() else {
+        let Some(dialog) = self.dialog else {
             return div().into_any_element();
         };
-        let Some(dialog) = self.dialog else {
+        if dialog == Dialog::Settings {
+            return self.settings_modal(cx);
+        }
+        let Some(item) = self.selected.clone() else {
             return div().into_any_element();
         };
         let local = item.local_path.is_some();
@@ -1220,6 +1541,7 @@ impl Neko {
                                 Dialog::Preview => item.title.clone(),
                                 Dialog::Rename => "Rename wallpaper".into(),
                                 Dialog::Delete => "Move to Recycle Bin?".into(),
+                                Dialog::Settings => unreachable!(),
                             }),
                     )
                     .child(
@@ -1394,6 +1716,7 @@ impl Neko {
                 .child(div().flex().justify_end().gap_2().p_4().child(button("cancel-delete","Keep wallpaper","close",false).on_click(cx.listener(|this,_,_,cx|{this.dialog=Some(Dialog::Preview);cx.notify();})))
                     .child(button("confirm-delete","Move to Recycle Bin","trash",true).bg(rgb(0xe4a3a7)).on_click(cx.listener(|this,_,_,cx|this.commit_delete(cx)))));
             }
+            Dialog::Settings => unreachable!(),
         }
         if !self.status.is_empty() {
             panel = panel.child(

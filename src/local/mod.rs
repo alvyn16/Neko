@@ -146,7 +146,7 @@ pub(crate) fn atomic_cache_write(output: &Path, contents: &[u8]) -> Result<()> {
 }
 
 /// Scan only the selected directory. Broken, unsupported and oversized files are skipped.
-pub fn scan(folder: &Path, cache_dir: &Path) -> Result<Vec<Wallpaper>> {
+pub fn image_paths(folder: &Path) -> Result<Vec<PathBuf>> {
     let entries = fs::read_dir(folder)
         .with_context(|| format!("Could not read wallpaper folder {}", folder.display()))?;
     let mut paths: Vec<PathBuf> = entries
@@ -165,6 +165,12 @@ pub fn scan(folder: &Path, cache_dir: &Path) -> Result<Vec<Wallpaper>> {
             path.clone(),
         )
     });
+    Ok(paths)
+}
+
+/// Scan only the selected directory. Broken, unsupported and oversized files are skipped.
+pub fn scan(folder: &Path, cache_dir: &Path) -> Result<Vec<Wallpaper>> {
+    let paths = image_paths(folder)?;
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
         let Ok((width, height)) = image_dimensions(&path) else {

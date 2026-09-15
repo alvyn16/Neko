@@ -18,5 +18,6 @@ cargo test online_provider_smoke -- --ignored --nocapture
 
 Image input is capped at 100 MiB encoded, 80 megapixels, 16,384 pixels per side, and 512 MiB decoded allocation. Network indexes/downloads are bounded separately. A stale bjarneo catalog remains usable when refresh cannot reach the network.
 
-For a manual UI pass, start `cargo run --release`, choose a folder containing a few JPG/PNG files, test Local/Explore tabs, source and color pills, preview/apply/save, rename, Explorer reveal, Recycle Bin delete, refresh, search submit, load more, and resize the window. The release script does not start the binary.
+For a manual UI pass, start `cargo run --release`, choose a folder containing a few JPG/PNG files, test Local/Explore tabs, source and color pills, preview/apply/save, rename, Explorer reveal, Recycle Bin delete, refresh, search submit, load more, and resize the window. Open Settings and test all five fit modes, Rotate now, and changing the automatic rotation interval. The release script does not start the binary.
 
+Build the installer with `powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1`. Install it for the current user, launch it from the Start Menu shortcut, pin that installed shortcut to the taskbar, and verify uninstall from Windows Settings.
