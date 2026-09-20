@@ -1436,22 +1436,28 @@ impl Neko {
                 self.config.last_tab == Tab::Search && self.page < self.last_page,
                 |s| {
                     s.child(
-                        button(
-                            "load-more",
-                            if self.loading {
+                        div()
+                            .id("load-more")
+                            .h(px(28.))
+                            .px(px(2.))
+                            .flex()
+                            .items_center()
+                            .cursor_pointer()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(MUTED))
+                            .hover(|s| s.text_color(rgb(TEXT)))
+                            .active(|s| s.opacity(0.75))
+                            .child(if self.loading {
                                 "Loading…"
                             } else {
                                 "Load more"
-                            },
-                            "arrow",
-                            false,
-                        )
-                        .h(px(28.))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            if !this.loading {
-                                this.search_page(this.page + 1, false, cx);
-                            }
-                        })),
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if !this.loading {
+                                    this.search_page(this.page + 1, false, cx);
+                                }
+                            })),
                     )
                 },
             )
