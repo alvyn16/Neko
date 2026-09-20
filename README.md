@@ -1,24 +1,39 @@
-# Neko
+<p align="center">
+  <img src="assets/neko-icon.svg" width="112" alt="Neko logo">
+</p>
 
-Neko is a small Windows wallpaper manager with a quiet, dark gallery UI. It is written in Rust with [GPUI](https://gpui.rs/) and keeps the selected wallpaper folder and last-used browsing source between launches.
+<h1 align="center">Neko</h1>
 
-## What it does
+<p align="center">A quiet, native wallpaper manager for Windows.</p>
 
-- Browse images from one local folder with cached 480 px previews.
-- Apply a local or downloaded wallpaper with the Windows desktop API.
-- Rename files, move them to the Recycle Bin, reveal them in Explorer, and save online images into the local folder without overwriting an existing file.
-- Search Wallhaven's SFW API with pagination.
-- Browse the curated `bjarneo/wallpapers` catalog, cached for offline searches, with text and exact color filtering.
-- Choose how Windows places wallpapers: Fill, Fit, Stretch, Center, or Tile.
-- Target every display or one specific monitor.
-- Rotate through random images from the selected local folder every 15 minutes, hourly, every 6 hours, or daily while Neko is running.
-- Drop image files onto the window to import them into the selected wallpaper folder.
-- Check GitHub Releases automatically and securely install updates after verifying the published SHA-256 checksum.
-- Use a borderless, draggable floating window with keyboard-friendly controls.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/alvyn16/Neko?style=flat-square" alt="MIT License"></a>
+  <a href="https://github.com/alvyn16/Neko/releases"><img src="https://img.shields.io/github/v/release/alvyn16/Neko?display_name=tag&amp;sort=semver&amp;style=flat-square" alt="Latest release"></a>
+  <a href="https://github.com/alvyn16/Neko/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/alvyn16/Neko/release.yml?branch=main&amp;style=flat-square&amp;label=build" alt="Build status"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&amp;logo=windows&amp;logoColor=white" alt="Windows">
+</p>
 
-The bjarneo live collection is intentionally omitted because it contains animated GIF/video assets and Windows' wallpaper API accepts a still image. Online originals are downloaded only when you apply or save them; previews are cached separately.
+## Preview
 
-## Build and run
+<!-- TODO: Add a concise screenshot or GIF of the gallery and wallpaper preview here. -->
+
+> TODO: Replace this placeholder with `docs/images/neko-preview.gif` (or a screenshot) and update the alt text.
+
+## Features
+
+- Browse a local wallpaper folder with cached previews, then apply images to all displays or a selected monitor.
+- Search Wallhaven's SFW API and browse the curated `bjarneo/wallpapers` catalog.
+- Save online images to the local folder, import images by drag and drop, and manage files from the gallery.
+- Choose Fill, Fit, Stretch, Center, or Tile placement and rotate local wallpapers while Neko is running.
+- Check GitHub Releases and install verified updates.
+
+## Install
+
+### Installer
+
+Download [Neko-Setup-x64.exe](https://github.com/alvyn16/Neko/releases/latest/download/Neko-Setup-x64.exe) from the latest release and run it. The per-user installer adds a Start Menu shortcut, can create a desktop shortcut, and includes an uninstaller.
+
+### Build from source
 
 Install the stable Rust MSVC toolchain and Windows build tools, then run:
 
@@ -26,28 +41,42 @@ Install the stable Rust MSVC toolchain and Windows build tools, then run:
 cargo run --release
 ```
 
-To make a redistributable folder and ZIP, run `powershell -ExecutionPolicy Bypass -File scripts/build-release.ps1`. The script uses `cargo build --release --locked` and writes only inside `dist/`.
+To create distributable artifacts, use:
 
-For the Windows installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-release.ps1
+```
+
+For the Windows installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1
 ```
 
-The installer places Neko in a stable per-user Programs folder, creates a Start Menu shortcut, offers an optional desktop shortcut, and registers a normal uninstaller. This is the recommended download for most users.
+## Quickstart
 
-Release builds support Authenticode signing through `scripts/sign-release.ps1`. The GitHub workflow signs `neko.exe` and the installer when the repository secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` contain a trusted PFX certificate and its password. Unsigned builds continue to work, but Windows may show a reputation warning.
+1. Start Neko and choose a wallpaper folder with `Ctrl+O`.
+2. Select an image to open its preview, then choose a monitor to apply it.
+3. Use the gear button for placement, display targeting, rotation, and update settings.
+4. Switch sources to browse local images, Wallhaven, or the bjarneo catalog; use `Ctrl+F` to search and `Enter` to submit.
 
-Neko targets Windows. GPUI can resolve on other hosts during development, but wallpaper application is available only on Windows.
+`F5` refreshes the current collection. `Esc` closes a preview or dialog.
 
-## Controls and data
+<details>
+<summary>Security &amp; privacy</summary>
 
-`F5` refreshes the current collection, `Ctrl+O` chooses a folder, `Ctrl+F` focuses search, `Enter` submits a search, and `Esc` closes a preview or dialog. Click a thumbnail for its full preview; hover the preview and choose the monitor button for a quick apply. Open the gear button for wallpaper fit, display targeting, rotation, and update settings.
+Neko validates image input before opening it: 100 MiB encoded, 80 megapixels, 16,384 pixels per side, and 512 MiB decoded allocation. Network requests use HTTPS, provider-host allowlisting, bounded responses, and explicit timeouts. Settings and provider/image caches remain on the device; set `NEKO_DATA_DIR` to a writable directory to keep both in one location. Neko has no account, telemetry, favorites service, or cloud upload.
 
-Settings are stored in the platform configuration directory and provider/image caches in the platform cache directory. Set `NEKO_DATA_DIR` to a writable directory to keep both under that directory (useful for portable installs and tests). Neko validates image dimensions, encoded size, and decode memory before opening a file; see [docs/TESTING.md](docs/TESTING.md) for the exact limits and verification commands.
+See [testing and limits](docs/TESTING.md) for verification commands and further detail.
+</details>
 
-Wallhaven basic SFW search does not require an account or API key. Network requests use HTTPS, an allowlist of provider hosts, bounded responses, and explicit timeouts. No account, telemetry, favorites service, or cloud upload is included.
+## Sources & credits
 
-## Project map
+- [Wallhaven](https://wallhaven.cc/) provides the SFW search source.
+- [bjarneo/wallpapers](https://github.com/bjarneo/wallpapers) provides the curated catalog source.
 
-`src/ui/` contains the GPUI window and native text input, `src/local/` owns safe filesystem operations and thumbnail caching, `src/sources/` owns both online providers and their cache, `src/wallpaper/` wraps Windows wallpaper application, and `src/config.rs` persists settings.
+Neko does not bundle or redistribute wallpapers. It fetches online images only on demand when you choose to apply or save them; use of those images is subject to their respective terms and licenses.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development, testing, and issue guidelines. Third-party notices are in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
