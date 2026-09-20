@@ -61,6 +61,9 @@ struct Neko {
     items: Vec<Wallpaper>,
     visible: Vec<usize>,
     selected: Option<Wallpaper>,
+    preview_path: Option<PathBuf>,
+    preview_loading: bool,
+    preview_generation: u64,
     dialog: Option<Dialog>,
     loading: bool,
     busy: bool,
@@ -202,6 +205,9 @@ impl Neko {
             items: vec![],
             visible: vec![],
             selected: None,
+            preview_path: None,
+            preview_loading: false,
+            preview_generation: 0,
             dialog: None,
             loading: false,
             busy: false,
@@ -797,9 +803,42 @@ impl Neko {
         cx.notify();
     }
     fn open_item(&mut self, item: Wallpaper, window: &mut Window, cx: &mut Context<Self>) {
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        let item_id = item.id.clone();
+        let preview_item = item.clone();
+        let cache = self.cache.clone();
+        self.preview_path = item.thumbnail_path.clone();
+        self.preview_loading = true;
         self.selected = Some(item);
         self.dialog = Some(Dialog::Preview);
         window.focus(&self.focus);
+        job(
+            cx,
+            move || -> anyhow::Result<PathBuf> {
+                let original = match preview_item.local_path.as_ref() {
+                    Some(path) => path.clone(),
+                    None => sources::download(&preview_item, &cache)?,
+                };
+                local::preview(&original, &cache)
+            },
+            move |this, result, cx| {
+                if this.preview_generation != generation
+                    || this.selected.as_ref().map(|item| item.id.as_str()) != Some(item_id.as_str())
+                {
+                    return;
+                }
+                this.preview_loading = false;
+                match result {
+                    Ok(path) => this.preview_path = Some(path),
+                    Err(error) => {
+                        this.status = format!("Could not load full-quality preview: {error:#}");
+                        this.error = true;
+                    }
+                }
+                cx.notify();
+            },
+        );
         cx.notify();
     }
 
@@ -1858,11 +1897,17 @@ impl Neko {
             );
         match dialog {
             Dialog::Preview => {
+                let preview_path = self
+                    .preview_path
+                    .clone()
+                    .or_else(|| item.thumbnail_path.clone());
+                let has_preview = preview_path.is_some();
                 panel =
                     panel
                         .child(
                             div()
                                 .mx_4()
+                                .relative()
                                 .rounded(px(10.))
                                 .overflow_hidden()
                                 .h(px((width * 0.51)
@@ -1871,15 +1916,30 @@ impl Neko {
                                 .flex()
                                 .justify_center()
                                 .items_center()
-                                .when_some(item.thumbnail_path.clone(), |s, p| {
+                                .when_some(preview_path, |s, p| {
                                     s.child(
                                         img(Arc::<Path>::from(p))
                                             .size_full()
                                             .object_fit(ObjectFit::Contain),
                                     )
                                 })
-                                .when(item.thumbnail_path.is_none(), |s| {
+                                .when(!has_preview, |s| {
                                     s.child(icon("image").size(px(50.)).text_color(rgb(MUTED)))
+                                })
+                                .when(self.preview_loading, |s| {
+                                    s.child(
+                                        div()
+                                            .absolute()
+                                            .right(px(10.))
+                                            .bottom(px(10.))
+                                            .px_2()
+                                            .py_1()
+                                            .rounded(px(6.))
+                                            .bg(rgba(0x101014dc))
+                                            .text_size(px(10.))
+                                            .text_color(rgb(0xc8c8d0))
+                                            .child("Loading full-quality preview…"),
+                                    )
                                 }),
                         )
                         .child(

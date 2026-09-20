@@ -13,7 +13,8 @@ const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_PIXELS: u64 = 80_000_000;
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 16_384;
-const THUMBNAIL_SIZE: u32 = 480;
+const THUMBNAIL_SIZE: u32 = 720;
+const PREVIEW_SIZE: u32 = 1_920;
 
 fn supported_extension(path: &Path) -> bool {
     path.extension().and_then(|s| s.to_str()).is_some_and(|s| {
@@ -101,23 +102,41 @@ pub(crate) fn cache_key(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-pub fn thumbnail(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
-    let directory = cache_dir.join("thumbnails");
+fn cached_preview(
+    path: &Path,
+    cache_dir: &Path,
+    directory_name: &str,
+    size: u32,
+    quality: u8,
+) -> Result<PathBuf> {
+    let directory = cache_dir.join(directory_name);
     fs::create_dir_all(&directory).context("Could not create thumbnail cache")?;
     let output = directory.join(format!("{}.jpg", cache_key(path)?));
     if output.is_file()
-        && image::image_dimensions(&output)
-            .is_ok_and(|(w, h)| w <= THUMBNAIL_SIZE && h <= THUMBNAIL_SIZE)
+        && image::image_dimensions(&output).is_ok_and(|(w, h)| w <= size && h <= size)
     {
         return Ok(output);
     }
-    let image = read_image(path)?
-        .thumbnail(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        .to_rgb8();
+    let source = read_image(path)?;
+    let image = if source.width() > size || source.height() > size {
+        source.resize(size, size, image::imageops::FilterType::Lanczos3)
+    } else {
+        source
+    }
+    .to_rgb8();
     let mut encoded = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, 86).encode_image(&image)?;
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, quality)
+        .encode_image(&image)?;
     atomic_cache_write(&output, &encoded)?;
     Ok(output)
+}
+
+pub fn thumbnail(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
+    cached_preview(path, cache_dir, "thumbnails-v2", THUMBNAIL_SIZE, 92)
+}
+
+pub fn preview(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
+    cached_preview(path, cache_dir, "previews-v1", PREVIEW_SIZE, 95)
 }
 
 pub(crate) fn atomic_cache_write(output: &Path, contents: &[u8]) -> Result<()> {
@@ -594,10 +613,24 @@ mod tests {
         let first = thumbnail(&path, cache.path()).unwrap();
         fs::write(&first, b"interrupted cache write").unwrap();
         assert_eq!(first, thumbnail(&path, cache.path()).unwrap());
-        assert_eq!(image::image_dimensions(&first).unwrap(), (480, 240));
+        assert_eq!(image::image_dimensions(&first).unwrap(), (720, 360));
         write_image(&path, 400, 800);
         let changed = thumbnail(&path, cache.path()).unwrap();
         assert_ne!(first, changed);
-        assert_eq!(image::image_dimensions(&changed).unwrap(), (240, 480));
+        assert_eq!(image::image_dimensions(&changed).unwrap(), (360, 720));
+    }
+
+    #[test]
+    fn full_preview_is_sharper_than_the_grid_thumbnail() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.png");
+        write_image(&path, 3840, 2160);
+
+        let thumbnail = thumbnail(&path, cache.path()).unwrap();
+        let full_preview = preview(&path, cache.path()).unwrap();
+
+        assert_eq!(image::image_dimensions(thumbnail).unwrap(), (720, 405));
+        assert_eq!(image::image_dimensions(full_preview).unwrap(), (1920, 1080));
     }
 }
