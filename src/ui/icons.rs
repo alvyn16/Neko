@@ -27,9 +27,7 @@ impl AssetSource for Icons {
             "search" => r#"<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>"#,
             "close" => r#"<path d="m6 6 12 12M6 18 18 6"/>"#,
             "minus" => r#"<path d="M5 12h14"/>"#,
-            "refresh" => {
-                r#"<path d="M20 7v5h-5M4 17v-5h5M19 11a7 7 0 0 0-12-6l-3 3M5 13a7 7 0 0 0 12 6l3-3"/>"#
-            }
+            "refresh" => r#"<path d="M20 12a8 8 0 1 1-2.34-5.66L20 8"/><path d="M20 3v5h-5"/>"#,
             "monitor" => {
                 r#"<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5M8 21h8"/>"#
             }

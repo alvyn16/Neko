@@ -956,14 +956,13 @@ impl Neko {
             })
             .when(!online, |s| {
                 s.child(
-                    button(
+                    text_button(
                         "choose-folder",
                         if self.config.wallpaper_folder.is_some() {
                             "Change folder"
                         } else {
                             "Choose folder"
                         },
-                        "folder",
                         false,
                     )
                     .on_click(
@@ -1171,15 +1170,18 @@ impl Neko {
             .child(
                 div()
                     .id("refresh")
-                    .size(px(30.))
+                    .size(px(32.))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(8.))
+                    .rounded(px(9.))
+                    .border_1()
+                    .border_color(rgb(0x34343a))
+                    .bg(rgb(SURFACE))
                     .cursor_pointer()
-                    .text_color(rgb(MUTED))
-                    .hover(|s| s.bg(rgb(SURFACE)).text_color(rgb(TEXT)))
-                    .child(icon("refresh").size(px(14.)))
+                    .hover(|s| s.bg(rgb(0x35353b)))
+                    .active(|s| s.opacity(0.75))
+                    .child(icon("refresh").size(px(17.)).text_color(rgb(0xc8c8d0)))
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(true, cx))),
             )
     }
@@ -1702,7 +1704,7 @@ impl Neko {
                             .items_center()
                             .gap_3()
                             .child(
-                                button("rotate-now", "Rotate now", "refresh", true).on_click(
+                                text_button("rotate-now", "Rotate now", true).on_click(
                                     cx.listener(|this, _, _, cx| this.rotate_wallpaper(cx)),
                                 ),
                             )
