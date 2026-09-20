@@ -1459,19 +1459,16 @@ impl Neko {
             .child(
                 div()
                     .id("settings")
-                    .size(px(32.))
-                    .rounded(px(9.))
-                    .border_1()
-                    .border_color(rgb(0x34343a))
-                    .bg(rgb(SURFACE))
+                    .size(px(30.))
+                    .rounded(px(6.))
                     .flex()
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
-                    .text_color(rgb(0xb8b8c2))
-                    .hover(|s| s.bg(rgb(0x35353b)).text_color(rgb(TEXT)))
+                    .text_color(rgb(0x9d9da8))
+                    .hover(|s| s.bg(rgb(0x2a2a30)).text_color(rgb(TEXT)))
                     .active(|s| s.opacity(0.75))
-                    .child(icon("settings").size(px(18.)))
+                    .child(icon("settings").size(px(17.)))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.dialog = Some(Dialog::Settings);
                         this.selected = None;
