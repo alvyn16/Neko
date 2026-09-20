@@ -829,24 +829,6 @@ impl Neko {
             )
             .child(
                 div()
-                    .id("settings")
-                    .size(px(28.))
-                    .rounded_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .text_color(rgb(MUTED))
-                    .hover(|s| s.bg(rgb(SURFACE)).text_color(rgb(TEXT)))
-                    .child(icon("settings").size(px(14.)))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.dialog = Some(Dialog::Settings);
-                        this.selected = None;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
                     .id("minimize")
                     .size(px(28.))
                     .rounded_full()
@@ -1432,9 +1414,29 @@ impl Neko {
                     )
                 },
             )
-            .when(self.config.last_tab == Tab::Local, |s| {
-                s.child(div().text_color(rgb(0x55555f)).child("F5 refresh"))
-            })
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("settings")
+                    .size(px(32.))
+                    .rounded(px(9.))
+                    .border_1()
+                    .border_color(rgb(0x34343a))
+                    .bg(rgb(SURFACE))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_color(rgb(0xb8b8c2))
+                    .hover(|s| s.bg(rgb(0x35353b)).text_color(rgb(TEXT)))
+                    .active(|s| s.opacity(0.75))
+                    .child(icon("settings").size(px(18.)))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.dialog = Some(Dialog::Settings);
+                        this.selected = None;
+                        cx.notify();
+                    })),
+            )
     }
 
     fn settings_modal(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1472,7 +1474,7 @@ impl Neko {
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(15.))
+                            .text_size(px(17.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Settings"),
                     )
@@ -1487,7 +1489,8 @@ impl Neko {
                             .cursor_pointer()
                             .bg(rgb(SURFACE))
                             .hover(|s| s.bg(rgb(0x594048)))
-                            .child("×")
+                            .text_color(rgb(0xc8c8d0))
+                            .child(icon("close").size(px(15.)))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.dialog = None;
                                 cx.notify();
@@ -1503,14 +1506,14 @@ impl Neko {
                     .pb_4()
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .child("Wallpaper fit"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_size(px(12.))
+                            .text_color(rgb(0xa9a9b3))
                             .child("Controls how Windows places each wallpaper on the desktop."),
                     )
                     .child(
@@ -1522,15 +1525,16 @@ impl Neko {
                                 div()
                                     .id(("wallpaper-fit", index))
                                     .flex_1()
-                                    .h(px(34.))
+                                    .h(px(36.))
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(8.))
                                     .cursor_pointer()
-                                    .text_size(px(11.))
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::MEDIUM)
                                     .bg(rgb(if active { 0x403653 } else { SURFACE }))
-                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .text_color(rgb(if active { 0xe7ddff } else { 0xb8b8c2 }))
                                     .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
                                     .child(label)
                                     .on_click(
@@ -1548,14 +1552,14 @@ impl Neko {
                     .p_4()
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .child("Display"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_size(px(12.))
+                            .text_color(rgb(0xa9a9b3))
                             .child("Choose where Neko applies wallpapers."),
                     )
                     .child(
@@ -1567,16 +1571,17 @@ impl Neko {
                                 let active = self.config.monitor_index.is_none();
                                 div()
                                     .id(("monitor-target", 0usize))
-                                    .h(px(34.))
+                                    .h(px(36.))
                                     .px_3()
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(8.))
                                     .cursor_pointer()
-                                    .text_size(px(11.))
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::MEDIUM)
                                     .bg(rgb(if active { 0x403653 } else { SURFACE }))
-                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .text_color(rgb(if active { 0xe7ddff } else { 0xb8b8c2 }))
                                     .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
                                     .child("All displays")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -1588,16 +1593,17 @@ impl Neko {
                                 let active = self.config.monitor_index == Some(index);
                                 div()
                                     .id(("monitor-target", position + 1))
-                                    .h(px(34.))
+                                    .h(px(36.))
                                     .px_3()
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(8.))
                                     .cursor_pointer()
-                                    .text_size(px(11.))
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::MEDIUM)
                                     .bg(rgb(if active { 0x403653 } else { SURFACE }))
-                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .text_color(rgb(if active { 0xe7ddff } else { 0xb8b8c2 }))
                                     .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
                                     .child(monitor.label.clone())
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -1615,14 +1621,14 @@ impl Neko {
                     .p_4()
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .child("Automatic rotation"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_size(px(12.))
+                            .text_color(rgb(0xa9a9b3))
                             .child("Picks a random image from your local wallpaper folder while Neko is running."),
                     )
                     .child(
@@ -1634,15 +1640,16 @@ impl Neko {
                                 div()
                                     .id(("rotation-interval", index))
                                     .flex_1()
-                                    .h(px(34.))
+                                    .h(px(36.))
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(8.))
                                     .cursor_pointer()
-                                    .text_size(px(11.))
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::MEDIUM)
                                     .bg(rgb(if active { 0x403653 } else { SURFACE }))
-                                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                                    .text_color(rgb(if active { 0xe7ddff } else { 0xb8b8c2 }))
                                     .hover(|s| s.text_color(rgb(TEXT)).bg(rgb(0x323238)))
                                     .child(label)
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -1663,8 +1670,8 @@ impl Neko {
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(MUTED))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(0xa9a9b3))
                                     .child(if self.config.wallpaper_folder.is_some() {
                                         "Uses your selected wallpaper folder"
                                     } else {
@@ -1687,21 +1694,21 @@ impl Neko {
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(13.))
-                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_size(px(14.))
+                                    .font_weight(FontWeight::SEMIBOLD)
                                     .child("Updates"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(MUTED))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(0xa9a9b3))
                                     .child(format!("Version {}", env!("CARGO_PKG_VERSION"))),
                             ),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_size(px(12.))
+                            .text_color(rgb(0xa9a9b3))
                             .child(match &self.available_update {
                                 Some(info) => format!("Neko {} is ready to install.", info.version),
                                 None if self.update_checking => "Checking GitHub Releases…".into(),
@@ -1749,8 +1756,8 @@ impl Neko {
                     .when(!self.status.is_empty(), |s| {
                         s.child(
                             div()
-                                .text_size(px(10.))
-                                .text_color(rgb(if self.error { 0xe8a2a2 } else { MUTED }))
+                                .text_size(px(11.))
+                                .text_color(rgb(if self.error { 0xf0aaaa } else { 0xa9a9b3 }))
                                 .child(self.status.clone()),
                         )
                     }),
