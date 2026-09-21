@@ -172,6 +172,12 @@ mod tests {
         assert_eq!(loaded.rotation_interval, RotationInterval::Hourly);
         assert_eq!(loaded.monitor_index, Some(1));
         assert!(!loaded.check_for_updates);
+        config.last_source = Provider::Frenzy;
+        config.save_to(&path).unwrap();
+        assert_eq!(
+            Config::load_from(&path).unwrap().last_source,
+            Provider::Frenzy
+        );
         config.last_tab = Tab::Local;
         config.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path).unwrap().last_tab, Tab::Local);
@@ -187,6 +193,8 @@ mod tests {
         assert_eq!(old.monitor_index, None);
         assert!(old.check_for_updates);
         assert!(old.wallpaper_folder.is_none());
+        let unknown: Config = toml::from_str("last_source = 'removed-provider'").unwrap();
+        assert_eq!(unknown.last_source, Provider::Wallhaven);
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.toml");
         fs::write(&path, "last_tab = [broken").unwrap();

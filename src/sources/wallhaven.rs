@@ -96,6 +96,7 @@ fn parse(bytes: &[u8]) -> Result<SearchResults> {
         page: response.meta.current_page.max(1),
         last_page: response.meta.last_page.max(1),
         total: response.meta.total,
+        categories: vec![],
         notice: None,
     })
 }

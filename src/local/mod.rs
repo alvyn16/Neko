@@ -14,7 +14,7 @@ const MAX_PIXELS: u64 = 80_000_000;
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 16_384;
 const THUMBNAIL_SIZE: u32 = 720;
-const PREVIEW_SIZE: u32 = 1_920;
+const PREVIEW_SIZE: u32 = 1_280;
 
 fn supported_extension(path: &Path) -> bool {
     path.extension().and_then(|s| s.to_str()).is_some_and(|s| {
@@ -119,7 +119,7 @@ fn cached_preview(
     }
     let source = read_image(path)?;
     let image = if source.width() > size || source.height() > size {
-        source.resize(size, size, image::imageops::FilterType::Lanczos3)
+        source.thumbnail(size, size)
     } else {
         source
     }
@@ -136,7 +136,7 @@ pub fn thumbnail(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
 }
 
 pub fn preview(path: &Path, cache_dir: &Path) -> Result<PathBuf> {
-    cached_preview(path, cache_dir, "previews-v1", PREVIEW_SIZE, 95)
+    cached_preview(path, cache_dir, "previews-v2", PREVIEW_SIZE, 92)
 }
 
 pub(crate) fn atomic_cache_write(output: &Path, contents: &[u8]) -> Result<()> {
@@ -631,6 +631,6 @@ mod tests {
         let full_preview = preview(&path, cache.path()).unwrap();
 
         assert_eq!(image::image_dimensions(thumbnail).unwrap(), (720, 405));
-        assert_eq!(image::image_dimensions(full_preview).unwrap(), (1920, 1080));
+        assert_eq!(image::image_dimensions(full_preview).unwrap(), (1280, 720));
     }
 }

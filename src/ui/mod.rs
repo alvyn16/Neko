@@ -76,6 +76,9 @@ struct Neko {
     last_page: u32,
     total: usize,
     color: Option<String>,
+    category: Option<String>,
+    categories: Vec<String>,
+    thumbnail_targets: HashSet<String>,
     inflight: HashSet<String>,
     failed_thumbs: HashSet<String>,
     monitors: Vec<wallpaper::MonitorInfo>,
@@ -220,6 +223,9 @@ impl Neko {
             last_page: 0,
             total: 0,
             color: None,
+            category: None,
+            categories: vec![],
+            thumbnail_targets: HashSet::new(),
             inflight: HashSet::new(),
             failed_thumbs: HashSet::new(),
             monitors,
@@ -480,7 +486,16 @@ impl Neko {
         }
         self.config.last_source = source;
         self.color = None;
+        self.category = None;
+        self.categories.clear();
         self.persist();
+        self.refresh(false, cx);
+    }
+    fn set_category(&mut self, category: Option<String>, cx: &mut Context<Self>) {
+        if self.category == category {
+            return;
+        }
+        self.category = category;
         self.refresh(false, cx);
     }
     fn filter_local(&mut self, cx: &mut Context<Self>) {
@@ -499,6 +514,7 @@ impl Neko {
         self.generation += 1;
         self.items.clear();
         self.visible.clear();
+        self.thumbnail_targets.clear();
         self.inflight.clear();
         self.failed_thumbs.clear();
         self.selected = None;
@@ -553,10 +569,21 @@ impl Neko {
         let provider = self.config.last_source;
         let query = self.active_query.clone();
         let color = self.color.clone();
+        let category = self.category.clone();
         let cache = self.cache.clone();
         job(
             cx,
-            move || sources::search(provider, &query, color.as_deref(), page, &cache, force),
+            move || {
+                sources::search(
+                    provider,
+                    &query,
+                    color.as_deref(),
+                    category.as_deref(),
+                    page,
+                    &cache,
+                    force,
+                )
+            },
             move |this, result, cx| {
                 if this.generation != generation {
                     return;
@@ -567,6 +594,7 @@ impl Neko {
                         this.page = result.page;
                         this.last_page = result.last_page;
                         this.total = result.total;
+                        this.categories = result.categories;
                         this.status = result.notice.unwrap_or_default();
                         this.error = false;
                         let existing: HashSet<_> =
@@ -578,7 +606,6 @@ impl Neko {
                                 .filter(|w| !existing.contains(&w.id)),
                         );
                         this.visible = (0..this.items.len()).collect();
-                        this.load_thumbnails(cx);
                     }
                     Err(e) => this.fail(format!("Could not load wallpapers: {e:#}")),
                 }
@@ -596,7 +623,8 @@ impl Neko {
             .items
             .iter()
             .filter(|w| {
-                w.thumbnail_path.is_none()
+                self.thumbnail_targets.contains(&w.id)
+                    && w.thumbnail_path.is_none()
                     && !self.inflight.contains(&w.id)
                     && !self.failed_thumbs.contains(&w.id)
             })
@@ -634,6 +662,21 @@ impl Neko {
                 },
             );
         }
+    }
+    fn load_visible_thumbnails(
+        &mut self,
+        rows: std::ops::Range<usize>,
+        columns: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.thumbnail_targets = (rows.start * columns
+            ..(rows.end * columns).min(self.visible.len()))
+            .filter_map(|position| {
+                let item_index = *self.visible.get(position)?;
+                self.items.get(item_index).map(|item| item.id.clone())
+            })
+            .collect();
+        self.load_thumbnails(cx);
     }
     fn fail(&mut self, message: String) {
         self.status = message;
@@ -806,39 +849,36 @@ impl Neko {
         self.preview_generation = self.preview_generation.wrapping_add(1);
         let generation = self.preview_generation;
         let item_id = item.id.clone();
-        let preview_item = item.clone();
-        let cache = self.cache.clone();
+        let original = item.local_path.clone();
         self.preview_path = item.thumbnail_path.clone();
-        self.preview_loading = true;
+        self.preview_loading = original.is_some();
         self.selected = Some(item);
         self.dialog = Some(Dialog::Preview);
         window.focus(&self.focus);
-        job(
-            cx,
-            move || -> anyhow::Result<PathBuf> {
-                let original = match preview_item.local_path.as_ref() {
-                    Some(path) => path.clone(),
-                    None => sources::download(&preview_item, &cache)?,
-                };
-                local::preview(&original, &cache)
-            },
-            move |this, result, cx| {
-                if this.preview_generation != generation
-                    || this.selected.as_ref().map(|item| item.id.as_str()) != Some(item_id.as_str())
-                {
-                    return;
-                }
-                this.preview_loading = false;
-                match result {
-                    Ok(path) => this.preview_path = Some(path),
-                    Err(error) => {
-                        this.status = format!("Could not load full-quality preview: {error:#}");
-                        this.error = true;
+        if let Some(original) = original {
+            let cache = self.cache.clone();
+            job(
+                cx,
+                move || local::preview(&original, &cache),
+                move |this, result, cx| {
+                    if this.preview_generation != generation
+                        || this.selected.as_ref().map(|item| item.id.as_str())
+                            != Some(item_id.as_str())
+                    {
+                        return;
                     }
-                }
-                cx.notify();
-            },
-        );
+                    this.preview_loading = false;
+                    match result {
+                        Ok(path) => this.preview_path = Some(path),
+                        Err(error) => {
+                            this.status = format!("Could not load full-quality preview: {error:#}");
+                            this.error = true;
+                        }
+                    }
+                    cx.notify();
+                },
+            );
+        }
         cx.notify();
     }
 
@@ -991,6 +1031,7 @@ impl Neko {
                 [
                     (Provider::Wallhaven, "Wallhaven"),
                     (Provider::Bjarneo, "bjarneo"),
+                    (Provider::Frenzy, "Frenzy"),
                 ]
                 .into_iter()
                 .map(|(provider, label)| {
@@ -1098,6 +1139,67 @@ impl Neko {
             })
     }
 
+    fn categorybar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_none()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .px(px(24.))
+            .pb(px(18.))
+            .child(
+                div()
+                    .mr_1()
+                    .text_size(px(11.))
+                    .text_color(rgb(MUTED))
+                    .child("CATEGORY"),
+            )
+            .child({
+                let active = self.category.is_none();
+                div()
+                    .id("frenzy-category-all")
+                    .flex()
+                    .items_center()
+                    .h(px(28.))
+                    .px_3()
+                    .rounded_full()
+                    .cursor_pointer()
+                    .text_size(px(11.))
+                    .bg(rgb(if active { 0x302a3e } else { SURFACE }))
+                    .text_color(rgb(if active { ACCENT } else { MUTED }))
+                    .child("All")
+                    .hover(|s| s.text_color(rgb(TEXT)))
+                    .on_click(cx.listener(|this, _, _, cx| this.set_category(None, cx)))
+            })
+            .children(
+                self.categories
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(index, category)| {
+                        let active = self.category.as_deref() == Some(category.as_str());
+                        let selected = category.clone();
+                        div()
+                            .id(("frenzy-category", index))
+                            .flex()
+                            .items_center()
+                            .h(px(28.))
+                            .px_3()
+                            .rounded_full()
+                            .cursor_pointer()
+                            .text_size(px(11.))
+                            .bg(rgb(if active { 0x302a3e } else { SURFACE }))
+                            .text_color(rgb(if active { ACCENT } else { MUTED }))
+                            .child(category)
+                            .hover(|s| s.text_color(rgb(TEXT)))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_category(Some(selected.clone()), cx)
+                            }))
+                    }),
+            )
+    }
+
     fn collection_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let online = self.config.last_tab == Tab::Search;
         let title = if online {
@@ -1113,6 +1215,9 @@ impl Neko {
             match self.config.last_source {
                 Provider::Wallhaven => "A fresh perspective, one wallpaper at a time.".to_string(),
                 Provider::Bjarneo => "A curated collection by bjarneo & contributors.".to_string(),
+                Provider::Frenzy => {
+                    "A folder-based collection from FrenzyExists/wallpapers.".to_string()
+                }
             }
         } else {
             self.config
@@ -1840,6 +1945,7 @@ impl Neko {
         let source_label = match item.source {
             Some(Provider::Wallhaven) => "Wallhaven",
             Some(Provider::Bjarneo) => "bjarneo",
+            Some(Provider::Frenzy) => "FrenzyExists/wallpapers",
             None if local => "Local folder",
             None => "Online wallpaper",
         };
@@ -1907,136 +2013,133 @@ impl Neko {
                     .clone()
                     .or_else(|| item.thumbnail_path.clone());
                 let has_preview = preview_path.is_some();
-                panel =
-                    panel
-                        .child(
-                            div()
-                                .mx_4()
-                                .relative()
-                                .rounded(px(10.))
-                                .overflow_hidden()
-                                .h(px((width * 0.51)
-                                    .min(f32::from(window.viewport_size().height) - 270.)))
-                                .bg(rgb(0x0e0e10))
-                                .flex()
-                                .justify_center()
-                                .items_center()
-                                .when_some(preview_path, |s, p| {
-                                    s.child(
-                                        img(Arc::<Path>::from(p))
-                                            .size_full()
-                                            .object_fit(ObjectFit::Contain),
-                                    )
-                                })
-                                .when(!has_preview, |s| {
-                                    s.child(icon("image").size(px(50.)).text_color(rgb(MUTED)))
-                                })
-                                .when(self.preview_loading, |s| {
-                                    s.child(
-                                        div()
-                                            .absolute()
-                                            .right(px(10.))
-                                            .bottom(px(10.))
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(px(6.))
-                                            .bg(rgba(0x101014dc))
-                                            .text_size(px(10.))
-                                            .text_color(rgb(0xc8c8d0))
-                                            .child("Loading full-quality preview…"),
-                                    )
-                                }),
-                        )
-                        .child(
-                            div()
-                                .px_4()
-                                .pt_3()
-                                .text_size(px(11.))
-                                .text_color(rgb(MUTED))
-                                .child(
-                                    format!(
-                                        "{}{}",
-                                        if item.width > 0 {
-                                            format!("{} × {}  ·  ", item.width, item.height)
-                                        } else {
-                                            String::new()
-                                        },
-                                        item.attribution.as_deref().unwrap_or(source_label)
-                                    ) + &color_label,
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .items_center()
-                                .gap_2()
-                                .p_4()
-                                .child(
-                                    button(
-                                        "apply",
-                                        if self.busy {
-                                            "Working…"
-                                        } else {
-                                            "Apply wallpaper"
-                                        },
-                                        "monitor",
-                                        true,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| this.apply_item(apply.clone(), cx),
-                                    )),
+                panel = panel
+                    .child(
+                        div()
+                            .mx_4()
+                            .relative()
+                            .rounded(px(10.))
+                            .overflow_hidden()
+                            .h(px(
+                                (width * 0.51).min(f32::from(window.viewport_size().height) - 270.)
+                            ))
+                            .bg(rgb(0x0e0e10))
+                            .flex()
+                            .justify_center()
+                            .items_center()
+                            .when_some(preview_path, |s, p| {
+                                s.child(
+                                    img(Arc::<Path>::from(p))
+                                        .size_full()
+                                        .object_fit(ObjectFit::Contain),
                                 )
-                                .when(!local, |s| {
-                                    s.child(
-                                        button("save", "Save to folder", "download", false)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.save_item(save.clone(), Some(window), cx)
-                                            })),
-                                    )
-                                })
-                                .when(local, |s| {
-                                    s.child(button("rename", "Rename", "edit", false).on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            let name = this
-                                                .selected
-                                                .as_ref()
-                                                .and_then(|w| w.local_path.as_ref())
-                                                .and_then(|p| p.file_stem())
-                                                .map(|s| s.to_string_lossy().into_owned())
-                                                .unwrap_or_default();
-                                            this.rename_input
-                                                .update(cx, |i, cx| i.set_value(&name, cx));
-                                            this.dialog = Some(Dialog::Rename);
-                                            this.rename_input.focus_handle(cx).focus(window);
+                            })
+                            .when(!has_preview, |s| {
+                                s.child(icon("image").size(px(50.)).text_color(rgb(MUTED)))
+                            })
+                            .when(self.preview_loading, |s| {
+                                s.child(
+                                    div()
+                                        .absolute()
+                                        .right(px(10.))
+                                        .bottom(px(10.))
+                                        .px_2()
+                                        .py_1()
+                                        .rounded(px(6.))
+                                        .bg(rgba(0x101014dc))
+                                        .text_size(px(10.))
+                                        .text_color(rgb(0xc8c8d0))
+                                        .child("Loading full-quality preview…"),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .px_4()
+                            .pt_3()
+                            .text_size(px(11.))
+                            .text_color(rgb(MUTED))
+                            .child(
+                                format!(
+                                    "{}{}",
+                                    if item.width > 0 {
+                                        format!("{} × {}  ·  ", item.width, item.height)
+                                    } else {
+                                        String::new()
+                                    },
+                                    item.attribution.as_deref().unwrap_or(source_label)
+                                ) + &color_label,
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_2()
+                            .p_4()
+                            .child(
+                                text_button(
+                                    "apply",
+                                    if self.busy {
+                                        "Working…"
+                                    } else {
+                                        "Apply wallpaper"
+                                    },
+                                    true,
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| this.apply_item(apply.clone(), cx),
+                                )),
+                            )
+                            .when(!local, |s| {
+                                s.child(text_button("save", "Save to folder", false).on_click(
+                                    cx.listener(move |this, _, window, cx| {
+                                        this.save_item(save.clone(), Some(window), cx)
+                                    }),
+                                ))
+                            })
+                            .when(local, |s| {
+                                s.child(text_button("rename", "Rename", false).on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        let name = this
+                                            .selected
+                                            .as_ref()
+                                            .and_then(|w| w.local_path.as_ref())
+                                            .and_then(|p| p.file_stem())
+                                            .map(|s| s.to_string_lossy().into_owned())
+                                            .unwrap_or_default();
+                                        this.rename_input
+                                            .update(cx, |i, cx| i.set_value(&name, cx));
+                                        this.dialog = Some(Dialog::Rename);
+                                        this.rename_input.focus_handle(cx).focus(window);
+                                        cx.notify();
+                                    }),
+                                ))
+                                .child(text_button("reveal", "Show in folder", false).on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        if let Some(path) = this
+                                            .selected
+                                            .as_ref()
+                                            .and_then(|w| w.local_path.clone())
+                                            && let Err(e) = local::show_in_folder(&path)
+                                        {
+                                            this.fail(format!("Could not show file: {e}"));
                                             cx.notify();
-                                        }),
-                                    ))
-                                    .child(
-                                        button("reveal", "Show in folder", "folder", false)
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                if let Some(path) = this
-                                                    .selected
-                                                    .as_ref()
-                                                    .and_then(|w| w.local_path.clone())
-                                                    && let Err(e) = local::show_in_folder(&path)
-                                                {
-                                                    this.fail(format!("Could not show file: {e}"));
-                                                    cx.notify();
-                                                }
-                                            })),
-                                    )
-                                    .child(div().flex_1())
-                                    .child(
-                                        button("delete", "Delete", "trash", false)
-                                            .text_color(rgb(0xe29a9e))
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.dialog = Some(Dialog::Delete);
-                                                cx.notify();
-                                            })),
-                                    )
-                                }),
-                        );
+                                        }
+                                    }),
+                                ))
+                                .child(div().flex_1())
+                                .child(
+                                    text_button("delete", "Delete", false)
+                                        .text_color(rgb(0xe29a9e))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.dialog = Some(Dialog::Delete);
+                                            cx.notify();
+                                        })),
+                                )
+                            }),
+                    );
             }
             Dialog::Rename => {
                 panel = panel
@@ -2158,6 +2261,10 @@ impl Render for Neko {
             .when(self.config.last_tab == Tab::Search, |s| {
                 s.child(self.sourcebar(cx))
             })
+            .when(
+                self.config.last_tab == Tab::Search && self.config.last_source == Provider::Frenzy,
+                |s| s.child(self.categorybar(cx)),
+            )
             .child(self.collection_header(cx))
             .child(
                 div()
@@ -2173,6 +2280,7 @@ impl Render for Neko {
                                 "gallery",
                                 rows,
                                 cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                    this.load_visible_thumbnails(range.clone(), columns, cx);
                                     range
                                         .map(|row| {
                                             div().flex().gap(px(12.)).pb(px(13.)).children(

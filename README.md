@@ -22,7 +22,7 @@
 ## Features
 
 - Browse a local wallpaper folder with cached previews, then apply images to all displays or a selected monitor.
-- Search Wallhaven's SFW API and browse the curated `bjarneo/wallpapers` catalog.
+- Search Wallhaven's SFW API and browse the curated `bjarneo/wallpapers` and `FrenzyExists/wallpapers` catalogs.
 - Save online images to the local folder, import images by drag and drop, and manage files from the gallery.
 - Choose Fill, Fit, Stretch, Center, or Tile placement and rotate local wallpapers while Neko is running.
 - Check GitHub Releases and install verified updates.
@@ -58,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1
 1. Start Neko and choose a wallpaper folder with `Ctrl+O`.
 2. Select an image to open its preview, then choose a monitor to apply it.
 3. Use the gear button for placement, display targeting, rotation, and update settings.
-4. Switch sources to browse local images, Wallhaven, or the bjarneo catalog; use `Ctrl+F` to search and `Enter` to submit.
+4. Switch sources to browse local images, Wallhaven, bjarneo, or Frenzy; use `Ctrl+F` to search and `Enter` to submit. Frenzy can also be narrowed by its folder categories.
 
 `F5` refreshes the current collection. `Esc` closes a preview or dialog.
 
@@ -74,8 +74,9 @@ See [testing and limits](docs/TESTING.md) for verification commands and further 
 
 - [Wallhaven](https://wallhaven.cc/) provides the SFW search source.
 - [bjarneo/wallpapers](https://github.com/bjarneo/wallpapers) provides the curated catalog source.
+- [FrenzyExists/wallpapers](https://github.com/FrenzyExists/wallpapers) provides a folder-based catalog. Its repository license covers the repository code and does not grant rights to the wallpaper images.
 
-Neko does not bundle or redistribute wallpapers. It fetches online images only on demand when you choose to apply or save them; use of those images is subject to their respective terms and licenses.
+Neko does not bundle, mirror, or redistribute these wallpapers. It fetches catalog data and visible previews on demand, and fetches originals when you apply or save them. Use of the images is subject to their respective terms, copyright, and licenses.
 
 ## Contributing
 

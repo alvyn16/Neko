@@ -1,5 +1,6 @@
 //! Blocking provider work. Call these functions from workers, never the GPUI thread.
 mod bjarneo;
+mod frenzy;
 mod wallhaven;
 
 use crate::model::{Provider, SearchResults, Wallpaper};
@@ -18,7 +19,7 @@ use std::{
 };
 use url::Url;
 
-const MAX_DOWNLOAD: u64 = 96 * 1024 * 1024;
+const MAX_DOWNLOAD: u64 = 100 * 1024 * 1024;
 const MAX_THUMBNAIL: u64 = 8 * 1024 * 1024;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -26,6 +27,7 @@ pub fn search(
     provider: Provider,
     query: &str,
     color: Option<&str>,
+    category: Option<&str>,
     page: u32,
     cache_dir: &Path,
     refresh: bool,
@@ -37,6 +39,7 @@ pub fn search(
     match provider {
         Provider::Wallhaven => wallhaven::search(query, page.max(1)),
         Provider::Bjarneo => bjarneo::search(query, color, page.max(1), cache_dir, refresh),
+        Provider::Frenzy => frenzy::search(query, category, page.max(1), cache_dir, refresh),
     }
 }
 
@@ -63,7 +66,12 @@ pub fn thumbnail(item: &Wallpaper, cache_dir: &Path) -> Result<PathBuf> {
         .thumbnail_url
         .as_deref()
         .context("This wallpaper does not have a preview.")?;
-    let raw = cached_image(url, &cache_dir.join("network-thumbnails"), MAX_THUMBNAIL)?;
+    let limit = if item.source == Some(Provider::Frenzy) {
+        MAX_DOWNLOAD
+    } else {
+        MAX_THUMBNAIL
+    };
+    let raw = cached_image(url, &cache_dir.join("network-thumbnails"), limit)?;
     crate::local::thumbnail(&raw, cache_dir)
 }
 
@@ -169,6 +177,7 @@ fn validate_url(url: &Url) -> Result<()> {
         "wallhaven.cc"
             | "w.wallhaven.cc"
             | "th.wallhaven.cc"
+            | "api.github.com"
             | "raw.githubusercontent.com"
             | "bjarneo.github.io"
     ) || host.ends_with(".your-objectstorage.com");
@@ -276,6 +285,13 @@ mod tests {
             )
             .is_ok()
         );
+        assert!(validate_url(&Url::parse("https://api.github.com/repos/a/b").unwrap()).is_ok());
+        assert!(
+            validate_url(
+                &Url::parse("https://raw.githubusercontent.com/a/b/main/image.png").unwrap()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -292,19 +308,35 @@ mod tests {
     #[ignore = "Uses the public internet; run manually with --ignored --nocapture"]
     fn online_provider_smoke() {
         let cache = tempfile::tempdir().unwrap();
-        for provider in [Provider::Wallhaven, Provider::Bjarneo] {
-            let results = search(provider, "mountain", None, 1, cache.path(), true).unwrap();
-            assert!(!results.items.is_empty());
-            let item = &results.items[0];
-            let preview = thumbnail(item, cache.path()).unwrap();
-            let (width, height) = crate::local::image_dimensions(&preview).unwrap();
-            assert!(width <= 480 && height <= 480);
-            let original = download(item, cache.path()).unwrap();
-            crate::local::read_image(&original).unwrap();
-            println!(
-                "{provider:?}: {} matches; preview and original validated",
-                results.total
-            );
+        let mut failures = Vec::new();
+        for provider in [Provider::Frenzy, Provider::Wallhaven, Provider::Bjarneo] {
+            let query = if provider == Provider::Frenzy {
+                ""
+            } else {
+                "mountain"
+            };
+            let result = (|| -> Result<()> {
+                let results = search(provider, query, None, None, 1, cache.path(), true)?;
+                ensure!(!results.items.is_empty(), "the provider returned no images");
+                let item = &results.items[0];
+                let preview = thumbnail(item, cache.path())?;
+                let (width, height) = crate::local::image_dimensions(&preview)?;
+                ensure!(
+                    width <= 720 && height <= 720,
+                    "the generated preview exceeds 720 px"
+                );
+                let original = download(item, cache.path())?;
+                crate::local::read_image(&original)?;
+                println!(
+                    "{provider:?}: {} matches; preview and original validated",
+                    results.total
+                );
+                Ok(())
+            })();
+            if let Err(error) = result {
+                failures.push(format!("{provider:?}: {error:#}"));
+            }
         }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 }

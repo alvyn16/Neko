@@ -12,9 +12,11 @@ pub enum Tab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
-    #[default]
-    Wallhaven,
     Bjarneo,
+    Frenzy,
+    #[default]
+    #[serde(other)]
+    Wallhaven,
 }
 
 #[derive(Debug, Clone)]
@@ -38,5 +40,6 @@ pub struct SearchResults {
     pub page: u32,
     pub last_page: u32,
     pub total: usize,
+    pub categories: Vec<String>,
     pub notice: Option<String>,
 }

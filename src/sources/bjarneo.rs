@@ -291,6 +291,7 @@ fn filter_index(
         page,
         last_page,
         total,
+        categories: vec![],
         notice: None,
     })
 }
