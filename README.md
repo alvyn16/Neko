@@ -15,9 +15,7 @@
 
 ## Preview
 
-<!-- TODO: Add a concise screenshot or GIF of the gallery and wallpaper preview here. -->
-
-> TODO: Replace this placeholder with `docs/images/neko-preview.gif` (or a screenshot) and update the alt text.
+![Neko wallpaper gallery on Windows](docs/images/neko-preview.png)
 
 ## Features
 
