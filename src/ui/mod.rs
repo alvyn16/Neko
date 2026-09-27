@@ -2235,7 +2235,6 @@ impl Render for Neko {
             .text_size(px(13.))
             .flex()
             .flex_col()
-            .track_focus(&self.focus)
             .key_context("Neko")
             .on_action(cx.listener(|this, _: &Refresh, _, cx| {
                 if this.dialog.is_none() {
@@ -2257,51 +2256,78 @@ impl Render for Neko {
                 cx.notify();
             }))
             .child(self.titlebar(cx))
-            .child(self.toolbar(cx))
-            .when(self.config.last_tab == Tab::Search, |s| {
-                s.child(self.sourcebar(cx))
-            })
-            .when(
-                self.config.last_tab == Tab::Search && self.config.last_source == Provider::Frenzy,
-                |s| s.child(self.categorybar(cx)),
-            )
-            .child(self.collection_header(cx))
+            // GPUI's track_focus prevents the default mouse-down behavior. Keep it
+            // below the title bar so Windows can move, snap, and maximize the window.
             .child(
                 div()
-                    .relative()
+                    .flex()
+                    .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .mx(px(24.))
-                    .mb_3()
-                    .when(self.visible.is_empty(), |s| s.child(self.empty(cx)))
-                    .when(!self.visible.is_empty(), |s| {
-                        s.child(
-                            uniform_list(
-                                "gallery",
-                                rows,
-                                cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                                    this.load_visible_thumbnails(range.clone(), columns, cx);
-                                    range
-                                        .map(|row| {
-                                            div().flex().gap(px(12.)).pb(px(13.)).children(
-                                                (row * columns
-                                                    ..((row + 1) * columns)
-                                                        .min(this.visible.len()))
-                                                    .map(|position| {
-                                                        let i = this.visible[position];
-                                                        this.card(&this.items[i], i, card_width, cx)
-                                                    }),
-                                            )
-                                        })
-                                        .collect::<Vec<_>>()
-                                }),
-                            )
-                            .size_full()
-                            .track_scroll(self.scroll.clone()),
-                        )
-                    }),
+                    .track_focus(&self.focus)
+                    .child(self.toolbar(cx))
+                    .when(self.config.last_tab == Tab::Search, |s| {
+                        s.child(self.sourcebar(cx))
+                    })
+                    .when(
+                        self.config.last_tab == Tab::Search
+                            && self.config.last_source == Provider::Frenzy,
+                        |s| s.child(self.categorybar(cx)),
+                    )
+                    .child(self.collection_header(cx))
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .min_h_0()
+                            .mx(px(24.))
+                            .mb_3()
+                            .when(self.visible.is_empty(), |s| s.child(self.empty(cx)))
+                            .when(!self.visible.is_empty(), |s| {
+                                s.child(
+                                    uniform_list(
+                                        "gallery",
+                                        rows,
+                                        cx.processor(
+                                            move |this, range: std::ops::Range<usize>, _, cx| {
+                                                this.load_visible_thumbnails(
+                                                    range.clone(),
+                                                    columns,
+                                                    cx,
+                                                );
+                                                range
+                                                    .map(|row| {
+                                                        div()
+                                                            .flex()
+                                                            .gap(px(12.))
+                                                            .pb(px(13.))
+                                                            .children(
+                                                                (row * columns
+                                                                    ..((row + 1) * columns)
+                                                                        .min(this.visible.len()))
+                                                                    .map(|position| {
+                                                                        let i =
+                                                                            this.visible[position];
+                                                                        this.card(
+                                                                            &this.items[i],
+                                                                            i,
+                                                                            card_width,
+                                                                            cx,
+                                                                        )
+                                                                    }),
+                                                            )
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            },
+                                        ),
+                                    )
+                                    .size_full()
+                                    .track_scroll(self.scroll.clone()),
+                                )
+                            }),
+                    )
+                    .child(self.footer(cx)),
             )
-            .child(self.footer(cx))
             .when(self.dialog.is_some(), |s| s.child(modal))
     }
 }
