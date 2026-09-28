@@ -2,6 +2,10 @@
 
 All notable user-facing changes to Neko are documented here.
 
+## 0.3.6
+
+- Fixed dragging the Neko window and maximizing it from the title bar.
+
 ## 0.3.5
 
 - Added the browsable `FrenzyExists/wallpapers` source with folder categories, search, pagination, filtering, attribution, and resilient offline caching.
