@@ -7,7 +7,7 @@
 <p align="center">A quiet, native wallpaper manager for Windows.</p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/alvyn16/Neko?style=flat-square" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/alvyn16/Neko?style=flat-square" alt="PolyForm Noncommercial 1.0.0"></a>
   <a href="https://github.com/alvyn16/Neko/releases"><img src="https://img.shields.io/github/v/release/alvyn16/Neko?display_name=tag&amp;sort=semver&amp;style=flat-square" alt="Latest release"></a>
   <a href="https://github.com/alvyn16/Neko/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/alvyn16/Neko/release.yml?branch=main&amp;style=flat-square&amp;label=build" alt="Build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&amp;logo=windows&amp;logoColor=white" alt="Windows">
